@@ -1,54 +1,21 @@
-export const config = {
-  runtime: "edge",
-};
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
 
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
-  }
-
-  const apiKey = (globalThis as any).ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY is not set" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
-  }
-
-  let payload: { messages?: unknown; system?: string };
-  try {
-    payload = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
-  }
-
-  const { messages, system } = payload;
-  const body: Record<string, unknown> = {
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    messages,
-  };
+  const { messages, system } = req.body;
+  const body: any = { model: "claude-sonnet-4-20250514", max_tokens: 1000, messages };
   if (system) body.system = system;
 
-  const upstream = await fetch(ANTHROPIC_URL, {
+  const upstream = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -58,9 +25,6 @@ export default async function handler(req: Request): Promise<Response> {
     body: JSON.stringify(body),
   });
 
-  const data = await upstream.text();
-  return new Response(data, {
-    status: upstream.status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
-  });
+  const data = await upstream.json();
+  return res.status(upstream.status).json(data);
 }
