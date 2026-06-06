@@ -12,7 +12,7 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = (globalThis as any).ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return new Response(
       JSON.stringify({ error: "ANTHROPIC_API_KEY is not set" }),
