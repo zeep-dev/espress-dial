@@ -18,16 +18,24 @@ function toBase64(file) {
   });
 }
 
-async function callClaude(messages, systemPrompt) {
-  const body = { messages };
+async function callClaude(messages: any[], systemPrompt?: string) {
+  const body: any = { 
+    model: "claude-sonnet-4-20250514", 
+    max_tokens: 1000, 
+    messages 
+  };
   if (systemPrompt) body.system = systemPrompt;
-  const res = await fetch("/api/claude", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
     body: JSON.stringify(body),
   });
   const data = await res.json();
-  const raw = data.content?.map(b => b.text || "").join("") || "";
+  const raw = data.content?.map((b: any) => b.text || "").join("") || "";
   return raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
