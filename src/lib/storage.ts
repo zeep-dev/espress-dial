@@ -1,11 +1,12 @@
 import { supabase } from "./supabase";
 
-// Collection keys (used as the row's "id" together with the user's id).
+// Collection identifiers (stored in the "collection_name" text column).
 export const HISTORY_KEY = "espresso-dial-history";
 export const BAGS_KEY = "espresso-dial-bags";
 
 // Table holding each collection as a single JSON array row per user.
-// Columns: id (text), user_id (uuid), data (jsonb)
+// Columns: id (bigint, generated), user_id (uuid), collection_name (text), data (jsonb)
+// Unique constraint on (user_id, collection_name) enables upsert.
 const TABLE = "collections";
 
 async function getUserId(): Promise<string | null> {
@@ -20,7 +21,7 @@ export async function loadCollection<T>(key: string): Promise<T[]> {
     .from(TABLE)
     .select("data")
     .eq("user_id", userId)
-    .eq("id", key)
+    .eq("collection_name", key)
     .maybeSingle();
   if (error) {
     console.error("[v0] loadCollection error:", error.message);
@@ -35,8 +36,8 @@ export async function saveCollection<T>(key: string, value: T[]): Promise<void> 
   const { error } = await supabase
     .from(TABLE)
     .upsert(
-      { id: key, user_id: userId, data: value },
-      { onConflict: "user_id,id" }
+      { user_id: userId, collection_name: key, data: value },
+      { onConflict: "user_id,collection_name" }
     );
   if (error) {
     console.error("[v0] saveCollection error:", error.message);
