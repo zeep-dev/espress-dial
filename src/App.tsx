@@ -20,7 +20,7 @@ function toBase64(file) {
 
 async function callClaude(messages: any[], systemPrompt?: string) {
   const body: any = { 
-    model: "claude-sonnet-4-20250514", 
+    model: "claude-sonnet-4-5", 
     max_tokens: 1000, 
     messages 
   };
