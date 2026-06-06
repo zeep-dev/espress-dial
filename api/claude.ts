@@ -1,33 +1,55 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs",
+  // Allow large base64-encoded image payloads through Vercel's body parser.
+  api: {
+    bodyParser: {
+      sizeLimit: "25mb",
+    },
+  },
+  maxDuration: 60,
 };
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
-export default async function handler(req: Request): Promise<Response> {
+function readRawBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+export default async function handler(
+  req: IncomingMessage & { method?: string },
+  res: ServerResponse
+): Promise<void> {
+  const send = (status: number, payload: unknown) => {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json");
+    res.end(typeof payload === "string" ? payload : JSON.stringify(payload));
+  };
+
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    send(405, { error: "Method not allowed" });
+    return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY is not set" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    send(500, { error: "ANTHROPIC_API_KEY is not set" });
+    return;
   }
 
   let payload: { messages?: unknown; system?: string };
   try {
-    payload = await req.json();
+    const raw = await readRawBody(req);
+    payload = JSON.parse(raw);
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    send(400, { error: "Invalid JSON body" });
+    return;
   }
 
   const { messages, system } = payload;
@@ -50,8 +72,5 @@ export default async function handler(req: Request): Promise<Response> {
   });
 
   const data = await upstream.text();
-  return new Response(data, {
-    status: upstream.status,
-    headers: { "Content-Type": "application/json" },
-  });
+  send(upstream.status, data);
 }
