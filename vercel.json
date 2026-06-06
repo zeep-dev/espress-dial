@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/claude.ts": {
+      "runtime": "edge"
+    }
+  }
+}
