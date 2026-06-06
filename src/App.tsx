@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-
-const STORAGE_KEY = "espresso-dial-history";
-const BAGS_KEY = "espresso-dial-bags";
+import { supabase } from "./lib/supabase";
+import { loadCollection, saveCollection, HISTORY_KEY, BAGS_KEY } from "./lib/storage";
+import AuthScreen from "./components/AuthScreen";
 
 const GENERIC_DEFAULTS = {
   washed: { light: { niche: 14, dose: 18, yield: 36, time: 28 }, medium: { niche: 11, dose: 18, yield: 36, time: 27 }, dark: { niche: 8, dose: 18, yield: 36, time: 26 } },
@@ -19,9 +19,9 @@ function toBase64(file) {
 }
 
 async function callClaude(messages, systemPrompt) {
-  const body = { model: "claude-sonnet-4-20250514", max_tokens: 1000, messages };
+  const body = { messages };
   if (systemPrompt) body.system = systemPrompt;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -176,42 +176,85 @@ const styles = `
 `;
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [tab, setTab] = useState("dial");
   const [history, setHistory] = useState([]);
   const [bags, setBags] = useState([]);
 
   useEffect(() => {
-    (async () => {
-      try { const r = await window.storage.get(STORAGE_KEY); if (r?.value) setHistory(JSON.parse(r.value)); } catch {}
-      try { const r = await window.storage.get(BAGS_KEY); if (r?.value) setBags(JSON.parse(r.value)); } catch {}
-    })();
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session) { setHistory([]); setBags([]); return; }
+    (async () => {
+      setHistory(await loadCollection(HISTORY_KEY));
+      setBags(await loadCollection(BAGS_KEY));
+    })();
+  }, [session]);
 
   const saveHistory = async (newHistory) => {
     setHistory(newHistory);
-    try { await window.storage.set(STORAGE_KEY, JSON.stringify(newHistory)); } catch {}
+    await saveCollection(HISTORY_KEY, newHistory);
   };
 
   const saveBag = async (bagInfo, recommendation) => {
     const entry = { id: Date.now(), scannedDate: new Date().toISOString().split("T")[0], ...bagInfo, recommendation: recommendation || null };
     const newBags = [entry, ...bags];
     setBags(newBags);
-    try { await window.storage.set(BAGS_KEY, JSON.stringify(newBags)); } catch {}
+    await saveCollection(BAGS_KEY, newBags);
   };
 
   const updateBag = async (bagId, updatedRec) => {
     const newBags = bags.map(b => b.id === bagId ? { ...b, recommendation: updatedRec } : b);
     setBags(newBags);
-    try { await window.storage.set(BAGS_KEY, JSON.stringify(newBags)); } catch {}
+    await saveCollection(BAGS_KEY, newBags);
   };
 
   const addEntry = (entry) => saveHistory([entry, ...history]);
+
+  const handleSignOut = async () => { await supabase.auth.signOut(); };
+
+  if (authLoading) {
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="app">
+          <div className="status"><div className="spinner" />Loading…</div>
+        </div>
+      </>
+    );
+  }
+
+  if (!session) {
+    return (
+      <>
+        <style>{styles}</style>
+        <AuthScreen />
+      </>
+    );
+  }
 
   return (
     <>
       <style>{styles}</style>
       <div className="app">
-        <div className="header">
+        <div className="header" style={{ position: "relative" }}>
+          <button
+            className="btn btn-ghost"
+            onClick={handleSignOut}
+            style={{ position: "absolute", top: 0, right: 0, padding: "6px 12px" }}
+          >
+            Sign out
+          </button>
           <h1>Espresso <em>Dial</em></h1>
           <p>Niche Zero · Bambino Plus · Personal</p>
         </div>
